@@ -1,125 +1,150 @@
-# I'm going to create a lib for it
+import pandas as pd
 import inspect
 from IPython.display import clear_output
 
+
+class Process:
+    def __init__(self, scope, action, function, description, tracked):
+        self.scope = scope
+        self.action = action
+        self.function = function
+        self.description = description
+        self.tracked = tracked
+        
+    def run(self, data):
+        data = data.copy()
+        return self.function(data)
+    
+    def update(self, scope, action, function, description, tracked):
+        self.scope = scope
+        self.action = action
+        self.function = function
+        self.description = description
+        self.tracked = tracked
+
 class Tracker: 
     def __init__(self, data=None):
-        self.last_process_consolidated = -1
+        self.last_consolidated = -1
         self.processes = []
         self.backups = {}
-        self.data = data
-        if self.data is not None:
-            self.backups[-1] = self.data
+        self.__data = data
+        if self.__data is not None:
+            self.backups[-1] = self.__data
         
-    def get_last_backup_id(self, older_than=float('inf')):
-        last_backup_id = max([key for key in self.backups.keys() if key < older_than])
-        return last_backup_id
+    def __get_data(self):
+        return self.__data.copy()
     
-    def get_process_id(self, column, action):
-        for _id, process in enumerate(self.processes):
-            if (process['column'] == column) and (process['action'] == action):
-                return _id                
-        return None
+    def __set_data(self, value):
+        raise PermissionError('Changing Tracker.data from outside the class is not allowed')
     
-    def is_same_function(self, _id, function):
-        return inspect.getsource(function) == inspect.getsource(self.processes[_id]['function'])
+    data = property(__get_data, __set_data)
     
-    def purge_backups(self, newer_than=0):
+    def get_latest_backup_id(self, older_equal_to=float('inf')):
+        return max([key for key in self.backups.keys() if key <= older_equal_to])
+    
+    def purge_backups(self, newer_than=-1):
         self.backups = {key: value for key, value in self.backups.items() if key <= newer_than}
         return None
     
-    def rolback_consolidation(self, backup_id):
-        self.last_process_consolidated, self.data = backup_id, self.backups[backup_id].copy()
-        self.purge_backups(backup_id)   
-        for _id, process in enumerate(self.processes):
-            if _id > backup_id:
-                process['consolidated'] = False
-            
-    def consolidate(self, until_process=float('inf')):
-        if self.data is not None:
-            last_process = len(self.processes) - 1
-            until_process = min(until_process, last_process)         
-            proccesses_list = range(self.last_process_consolidated + 1 ,until_process + 1)
-            if len(proccesses_list) > 1:
-                answer = input('More than 1 process to consolidate. Do you want to continue? [Y to continue]')
-                clear_output()
-                if answer != 'Y':       
-                    print('Preprocessing data not consolidated.')
-                    return None
-            for _id in proccesses_list:
-                self.data = self.processes[_id]['function'](self.data)
-                self.processes[_id]['consolidated'] = True
-                self.last_process_consolidated = _id 
-        return None
-
-    def track(self, column='_general_', action='_general_', function=lambda data: data, description='_general_'):
-        process = {'column': column, 
-                   'action': action, 
-                   'function': function, 
-                   'description': description,
-                   'consolidated': False}
-        process_id = self.get_process_id(column, action)      
-        if process_id is None:
-            self.processes.append(process)
-            self.consolidate()
-        else:
-            if (self.data is not None) and self.processes[process_id]['consolidated']:
-                if self.is_same_function(process_id, function):
-                    process['consolidated'] = self.processes[process_id]['consolidated']
-                else:
-                    last_backup_id = self.get_last_backup_id(process_id)
-                    answer = input(f'''Process  [{process_id} | {column} | {action}] already exists with another function.
-If you continue, the consolidating of the data will be returned to the process {last_backup_id} (last consolidated backup).
-All processes after this one must be re-executed.
-Do you want continue? [Y to continue] :''')
-                    clear_output()
-                    if answer != 'Y':
-                        print('Tracking aborted.')
-                        return None
-                    self.rolback_consolidation(last_backup_id)        
-                    
-            self.processes[process_id] = process
-            self.consolidate(process_id)
-        #print(description)
+    def rolback(self, order):
+        if order < self.last_consolidated:
+            backup_id = self.get_latest_backup_id(order)
+            self.last_consolidated, self.__data = backup_id, self.backups[backup_id].copy()
+            self.purge_backups(backup_id)
         return None
     
-    def set_process_order(self, column, action, new_order, consolidate=True):
-        process_id = self.get_process_id(column, action)
-        last_consolidated_id = min(process_id, new_order) - 1
-        last_backup_id = self.get_last_backup_id(last_consolidated_id)
-        self.rolback_consolidation(last_backup_id)
-        process = self.processes.pop(process_id)
-        self.processes.insert(new_order, process)
-        if consolidate:
-            self.consolidate()
-        return None    
+    def is_same_function(self, functionA, functionB):
+        return inspect.getsource(functionA) == inspect.getsource(functionB)
     
     def status(self):
-        status = ' flag | id - column - action - description \n'
-        for _id, process in enumerate(self.processes):
-            consolidated_flag = '>>' if _id == self.last_process_consolidated else '  '
-            backup_flag = 'b' if self.backups.get(_id) is not None else ' '
-            status += f" {consolidated_flag} {backup_flag} | {_id} - {process['column']} - {process['action']} - {process['description']}\n"
-        status += '\n[>>: last consolidated | b: backed up]'
+        status = ' flags | order - scope - action - description \n'
+        for order, process in enumerate(self.processes):
+            consolidated_flag = '>' if order == self.last_consolidated else ' '
+            backup_flag = 'b' if self.backups.get(order) is not None else ' '
+            tracked_flag = 'x' if process.tracked == False else ' '
+            status += f" {consolidated_flag} {backup_flag} {tracked_flag} | {order:{5}} - {process.scope} - {process.action} - {process.description}\n"
+        status += '\n[>: last consolidated | b: backed up] | x: tracked]'
         print(status)
         return None
     
-    def backup(self):
-        if self.data is not None:
-            self.backups[self.last_process_consolidated] = self.data.copy()
-            print(f'Created backup of data with processes executed up to process {self.last_process_consolidated}')
-        else:
-            print('Impossible to backup. The preprocessing instance contains no data')
+    def consolidate(self, until=float('inf')):
+        if self.__data is not None:
+            last_process = len(self.processes) - 1
+            until = min(until, last_process)
+            processes_list = range(self.last_consolidated + 1, until + 1)            
+            if len(processes_list) > 1:
+                answer = input('More than 1 process to be consolidate. Do you want to continue? [Y to continue]')                
+                clear_output()
+                if answer != 'Y':
+                    print('Consolidation not carried out.')
+                    return None
+            for order in processes_list:
+                if self.processes[order].tracked:
+                    data = self.processes[order].run(self.__data)
+                    if not(isinstance(data, pd.DataFrame)):
+                        raise TypeError(f'Function must return a DataFrame. Process order {order} [{processes[order].scope}/{processes[order].action}]')
+                    self.__data = data
+                    self.processes[order].consolidate = True
+                    self.last_consolidated = order
         return None
     
-    def view_processes(self):
-        processes_list = ''
-        for process in self.processes:
-            processes_list += f"('{process['column']}', '{process['action']}'), # {process['description']}" + '\n'
-        print(processes_list)
+    def get_process_order(self, scope, action):
+        for order, process in enumerate(self.processes):
+            if (process.scope == scope) and (process.action == action):
+                return order
+        return -1
+    
+    def process_exists(self, scope, action):
+        if self.get_process_order(scope, action) == -1:
+            return False
+        return True
+
+    def add_process(self, scope, action, function, description, tracked=True):
+        if self.process_exists(scope, action):
+            self.update_process(scope, action, function, description, tracked)
+        else:
+            process = Process(scope, action, function, description, tracked)
+            self.processes.append(process)
+            if tracked: self.consolidate()
         return None
+    
+    def update_process(self, scope, action, function, description, tracked=True):
+        order = self.get_process_order(scope, action)
+        already_consolidated = self.last_consolidated >= order
+        different_tracked = self.processes[order].tracked != tracked
+        both_tracked = (self.processes[order].tracked and tracked)
+        different_functions = not(self.is_same_function(self.processes[order].function, function))
         
-    def process(self, data): 
-        for process in self.processes:
-            data = process['function'](data)
-        return data
+        if not(already_consolidated and (different_tracked or (both_tracked and different_functions))):
+            self.processes[order].update(scope, action, function, description, tracked)
+        else:                        
+            last_valid_backup = self.get_latest_backup_id(order)
+            answer = input(f'''Process {order} [{scope}/{action}] is tracked and consolidated.
+If you continue, the consolidating of the data will be returned to the order {last_valid_backup} (last valid backup).
+All processes after this one must be re-executed.
+Do you want continue? [Y to continue] :''')
+            clear_output()
+            if answer != 'Y':
+                print('Updating not carried out.')
+                return None
+            self.rolback(order - 1)        
+            self.processes[order].update(scope, action, function, description, tracked)
+            self.consolidate(order)
+        return None
+    
+    def backup(self):
+        if self.__data is not None:
+            self.backups[self.last_consolidated] = self.__data.copy()
+            print(f'Created backup of data with processes consolidated up to order {self.last_consolidated}')
+        else:
+            print('Impossible to backup. The instance contains no data.')
+        return None 
+    
+    def set_process_order(self, scope, action, new_order):
+        order = self.get_process_order(scope, action)
+        last_consolidated_order = min(order, new_order) - 1
+        print(last_consolidated_order, order)
+        self.rolback(last_consolidated_order)
+        process = self.processes.pop(order)
+        self.processes.insert(new_order, process)
+        return None   

@@ -3,6 +3,8 @@ import inspect
 import pickle
 import os.path
 from IPython.display import clear_output
+import zipfile
+import io
 
 
 class Process:
@@ -173,28 +175,35 @@ Do you want continue? [Y to continue] :''')
     def save(self, file_name):
         if os.path.exists(f'{file_name}.trk'):
             answer = input('There is already another tracker saved with this name. Do you want to continue? [Y to continue]')
-            if answer == 'Y':
-                data = (self.__last_consolidated,
-                        self.__processes,
-                        self.__backups,
-                        self.__data)
-                with open(f'{file_name}.trk', 'wb') as file:
-                    pickle.dump(data, file)
-                print(f'Tracker saved as {file_name}.trk!')
+            if answer != 'Y':
+                return None
+            
+        data = (self.__last_consolidated,
+                self.__processes,
+                self.__backups,
+                self.__data)
+        data = pickle.dumps(data)
+        print('Compressing data...')
+        zipfile.ZipFile(f'{file_name}.trk', mode='w', compression=zipfile.ZIP_BZIP2, compresslevel=5).writestr('data.pickle', data)
+            
+        print(f'Tracker saved as {file_name}.trk!')
         return None
         
     def load(self, file_name):   
         if os.path.exists(f'{file_name}.trk'):
             if (len(self.__processes) > 0) or (self.__data is not None):
                 answer = input('Tracker already has processes or data. Do you want to continue? [Y to continue]')
-                if answer == 'Y':
-                    with open(f'{file_name}.trk', 'rb') as file:
-                        data = pickle.load(file)
-                    self.__last_consolidated = data[0]
-                    self.__processes = data[1]
-                    self.__backups = data[2]
-                    self.__data = data[3]
-                    print(f'Tracker loaded from {file_name}.trk!')
+                if answer != 'Y':
+                    return None    
+            
+            print('Decompressing data...')
+            data = pickle.loads(zipfile.ZipFile(f'{file_name}.trk', 'r').open('data.pickle').read())
+        
+            self.__last_consolidated = data[0]
+            self.__processes = data[1]
+            self.__backups = data[2]
+            self.__data = data[3]
+            print(f'Tracker loaded from {file_name}.trk!')
         else:
             print('File does not exist!')
         return None

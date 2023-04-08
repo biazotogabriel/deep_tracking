@@ -4,29 +4,27 @@ import pickle
 import os.path
 from IPython.display import clear_output
 import zipfile
-import io
-
 
 class Process:
     def __init__(self, scope, action, function, description, tracked):
-        self.scope = scope
-        self.action = action
-        self.function = function
-        self.description = description
-        self.tracked = tracked
+        self.update(scope, action, function, description, tracked)
         
     def run(self, data):
         data = data.copy()
-        return self.function(data)
+        local = {}
+        exec(self.function, globals(), local)
+        function = list(local.values())[0]        
+        return function(data)
     
     def update(self, scope, action, function, description, tracked):
         self.scope = scope
         self.action = action
-        self.function = function
+        self.function = inspect.getsource(function) 
         self.description = description
         self.tracked = tracked
 
 class Tracker: 
+    
     def __init__(self, data=None):
         self.__last_consolidated = -1
         self.__processes = []
@@ -57,8 +55,8 @@ class Tracker:
             self.purge_backups(backup_id)
         return None
     
-    def is_same_function(self, functionA, functionB):
-        return inspect.getsource(functionA) == inspect.getsource(functionB)
+    def is_same_function(self, order, function):
+        return self.__processes[order].function == inspect.getsource(function)
     
     def status(self):
         status = ' flags | order - scope - action - description \n'
@@ -88,8 +86,7 @@ class Tracker:
                     if not(isinstance(data, pd.DataFrame)):
                         raise TypeError(f'Function must return a DataFrame. Process order {order} [{processes[order].scope}/{processes[order].action}]')
                     self.__data = data
-                    self.__processes[order].consolidate = True
-                    self.__last_consolidated = order
+                self.__last_consolidated = order
         return None
     
     def get_process_order(self, scope, action):
@@ -120,7 +117,7 @@ class Tracker:
         else:
             process = Process(scope, action, function, description, tracked)
             self.__processes.append(process)
-            if tracked: self.consolidate()
+            self.consolidate()
         return None
     
     def update_process(self, scope, action, function, description, tracked=True):
@@ -128,11 +125,8 @@ class Tracker:
         already_consolidated = self.__last_consolidated >= order
         different_tracked = self.__processes[order].tracked != tracked
         both_tracked = (self.__processes[order].tracked and tracked)
-        different_functions = not(self.is_same_function(self.__processes[order].function, function))
-        
-        if not(already_consolidated and (different_tracked or (both_tracked and different_functions))):
-            self.__processes[order].update(scope, action, function, description, tracked)
-        else:                        
+        different_functions = not(self.is_same_function(order, function))        
+        if already_consolidated and (different_tracked or (both_tracked and different_functions)):
             last_valid_backup = self.get_latest_backup_id(order)
             answer = input(f'''Process {order} [{scope}/{action}] is tracked and consolidated.
 If you continue, the consolidating of the data will be returned to the order {last_valid_backup} (last valid backup).
@@ -143,8 +137,9 @@ Do you want continue? [Y to continue] :''')
                 print('Updating not carried out.')
                 return None
             self.rolback(order - 1)        
-            self.__processes[order].update(scope, action, function, description, tracked)
-            self.consolidate(order)
+        self.__processes[order].update(scope, action, function, description, tracked)
+        self.consolidate(order)
+            
         return None
     
     def backup(self, verbose=False):
@@ -197,7 +192,9 @@ Do you want continue? [Y to continue] :''')
                     return None    
             
             print('Decompressing data...')
-            data = pickle.loads(zipfile.ZipFile(f'{file_name}.trk', 'r').open('data.pickle').read())
+            data = zipfile.ZipFile(f'{file_name}.trk', 'r').open('data.pickle').read()
+            
+            data = pickle.loads(data)
         
             self.__last_consolidated = data[0]
             self.__processes = data[1]

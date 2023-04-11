@@ -4,15 +4,23 @@ import pickle
 import os.path
 from IPython.display import clear_output
 import zipfile
+import sys
 
 class Process:
     def __init__(self, scope, action, function, description, tracked):
         self.update(scope, action, function, description, tracked)
         
     def run(self, data):
+        # get globals of the main
+        current_frame = sys._getframe()
+        name = current_frame.f_globals['__name__']
+        while name != '__main__':
+            current_frame = current_frame.f_back
+            name = current_frame.f_globals['__name__']
+
         data = data.copy()
         local = {}
-        exec(self.function, globals(), local)
+        exec(self.function, current_frame.f_globals, local)
         function = list(local.values())[0]        
         return function(data)
     

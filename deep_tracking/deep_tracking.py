@@ -41,16 +41,13 @@ class Tracker:
     
     data = property(__get_data, __set_data)
     
-    def get_latest_backup_id(self, older_equal_to=float('inf')):
-        return max([key for key in self.__backups.keys() if key <= older_equal_to])
-    
     def purge_backups(self, newer_than=-1):
         self.__backups = {key: value for key, value in self.__backups.items() if key <= newer_than}
         return None
     
     def rolback(self, order):
         if order < self.__last_consolidated:
-            backup_id = self.get_latest_backup_id(order)
+            backup_id = self.get_backup_id(order, method='<=')
             self.__last_consolidated, self.__data = backup_id, self.__backups[backup_id].copy()
             self.purge_backups(backup_id)
         return None
@@ -95,17 +92,6 @@ class Tracker:
                 return order
         return -1
     
-    def get_backup_before(self, scope=None, action=None, order=None):
-        if (order is None) and (scope is None) and action is None:
-            raise TypeError('At least one parameter must be send.')
-        if order is None:
-            order = self.get_process_order(scope, action)
-            if order == -1:
-                order = float('inf')
-        backup_id = self.get_latest_backup_id(order)
-        backup = self.__backups[backup_id] 
-        return backup.copy()
-    
     def process_exists(self, scope, action):
         if self.get_process_order(scope, action) == -1:
             return False
@@ -127,7 +113,7 @@ class Tracker:
         both_tracked = (self.__processes[order].tracked and tracked)
         different_functions = not(self.is_same_function(order, function))        
         if already_consolidated and (different_tracked or (both_tracked and different_functions)):
-            last_valid_backup = self.get_latest_backup_id(order)
+            last_valid_backup = get_backup_id(order - 1, method='<=')
             answer = input(f'''Process {order} [{scope}/{action}] is tracked and consolidated.
 If you continue, the consolidating of the data will be returned to the order {last_valid_backup} (last valid backup).
 All processes after this one must be re-executed.
@@ -204,4 +190,48 @@ Do you want continue? [Y to continue] :''')
         else:
             print('File does not exist!')
         return None
-        
+    
+    def get_processes(self, consolidated=None, tracked=None, scopes=None, actions=None):
+        processes = []
+        for order, process in enumerate(self.__processes):
+            if consolidated is not None:
+                if consolidated and order > self.__last_consolidated:
+                    continue
+                elif not(consolidated) and order <= self.__last_consolidated:
+                    continue
+            if tracked is not None:
+                if process.tracked != tracked:
+                    continue
+            if scopes is not None:
+                if process.scope not in scopes:
+                    continue
+            if actions is not None:
+                if process.action not in actions:
+                    continue
+            processes.append((process.scope, process.action))
+        return processes
+    
+    def get_backup(self, backup, method='=='):
+        backup_id = self.get_backup_id(backup, method)
+        if backup_id is not None:
+            return self.__backups[backup_id]
+        return None
+    
+    def get_backup_id(self, backup, method='=='):
+        if isinstance(backup, tuple):
+            scope = backup[0]
+            action = backup[1]
+            order = self.get_process_order(scope, action)
+        elif isinstance(backup, int):
+            order = backup
+        else:
+            raise TypeError('Parameter backup is neither a tuple nor a int')
+        print(order)
+            
+        backups_list = [key for key in self.__backups.keys() if eval(f'key {method} {order}')]
+        if backups_list:
+            if method in ('=','<=', '<'):
+                return max(backups_list)
+            else:
+                return min(backups_list)
+        return None

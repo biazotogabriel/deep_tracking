@@ -1,0 +1,7 @@
+1 - Change the version of setup.py
+
+2 - Run the command below to create a distribution:
+> python setup.py sdist
+
+3 - Run the command bellow to upload the ne version (required twine):
+> twine upload dist/*

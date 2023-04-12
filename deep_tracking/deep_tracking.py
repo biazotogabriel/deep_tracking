@@ -6,31 +6,6 @@ from IPython.display import clear_output
 import zipfile
 import sys
 
-class Process:
-    def __init__(self, scope, action, function, description, tracked):
-        self.update(scope, action, function, description, tracked)
-        
-    def run(self, data):
-        # get globals of the main
-        current_frame = sys._getframe()
-        name = current_frame.f_globals['__name__']
-        while name != '__main__':
-            current_frame = current_frame.f_back
-            name = current_frame.f_globals['__name__']
-
-        data = data.copy()
-        local = {}
-        exec(self.function, current_frame.f_globals, local)
-        function = list(local.values())[0]        
-        return function(data)
-    
-    def update(self, scope, action, function, description, tracked):
-        self.scope = scope
-        self.action = action
-        self.function = inspect.getsource(function) 
-        self.description = description
-        self.tracked = tracked
-
 class Tracker: 
     
     def __init__(self, data=None):
@@ -109,7 +84,7 @@ class Tracker:
         if self.process_exists(scope, action):
             self.update_process(scope, action, function, description, tracked)
         else:
-            process = Process(scope, action, function, description, tracked)
+            process = self.Process(scope, action, function, description, tracked)
             self.__processes.append(process)
             self.consolidate()
         return None
@@ -149,7 +124,7 @@ Do you want continue? [Y to continue] :''')
     def set_process_order(self, scope, action, new_order):
         order = self.get_process_order(scope, action)
         last_consolidated_order = min(order, new_order) - 1
-        print(last_consolidated_order, order)
+        #print(last_consolidated_order, order)
         self.rolback(last_consolidated_order)
         process = self.__processes.pop(order)
         self.__processes.insert(new_order, process)
@@ -234,7 +209,6 @@ Do you want continue? [Y to continue] :''')
             order = backup
         else:
             raise TypeError('Parameter backup is neither a tuple nor a int')
-        print(order)
             
         backups_list = [key for key in self.__backups.keys() if eval(f'key {method} {order}')]
         if backups_list:
@@ -243,3 +217,28 @@ Do you want continue? [Y to continue] :''')
             else:
                 return min(backups_list)
         return None
+    
+    class Process:
+        def __init__(self, scope, action, function, description, tracked):
+            self.update(scope, action, function, description, tracked)
+            
+        def run(self, data):
+            # get globals of the main
+            current_frame = sys._getframe()
+            name = current_frame.f_globals['__name__']
+            while name != '__main__':
+                current_frame = current_frame.f_back
+                name = current_frame.f_globals['__name__']
+
+            data = data.copy()
+            local = {}
+            exec(self.function, current_frame.f_globals, local)
+            function = list(local.values())[0]        
+            return function(data)
+        
+        def update(self, scope, action, function, description, tracked):
+            self.scope = scope
+            self.action = action
+            self.function = inspect.getsource(function) 
+            self.description = description
+            self.tracked = tracked

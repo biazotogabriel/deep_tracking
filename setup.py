@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='deep_tracking',
-    version='1.0.8',
+    version='1.0.9',
     description='Library to track the development of data science works using the DE&P method',
     long_description = 'Library to track the development of data science works using the DE&P method',
     author='Gabriel Nuernberg Biazoto',

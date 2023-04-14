@@ -131,9 +131,11 @@ Do you want continue? [Y to continue] :''')
         return None   
     
     def run(self, data, processes):
-        for process in processes:
-            order = self.get_process_order(process[0], process[1])
-            data = self.__processes[order].run(data)
+        for process_id in processes:
+            order = self.get_process_order(process_id[0], process_id[1])
+            process = self.__processes[order]
+            data = process.run(data)
+            print(f'[{process.scope}/{process.action}] - {process.description}')
         return data
     
     def save(self, file_name):
@@ -195,9 +197,12 @@ Do you want continue? [Y to continue] :''')
         return processes
     
     def get_backup(self, backup, method='=='):
-        backup_id = self.get_backup_id(backup, method)
+        if isinstance(backup, int):
+            backup_id = backup
+        else:
+            backup_id = self.get_backup_id(backup, method)
         if backup_id is not None:
-            return self.__backups[backup_id]
+            return self.__backups[backup_id].copy()
         return None
     
     def get_backup_id(self, backup, method='=='):
